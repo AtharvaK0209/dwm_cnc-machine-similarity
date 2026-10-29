@@ -11,6 +11,7 @@ from .dataset import (
     CONDITION_CLASSES,
     CNCDataset,
     load_dataset,
+    make_query_record,
     train_test_split,
 )
 from .knn import GowerKNNClassifier
@@ -127,8 +128,8 @@ def run_evaluation(dataset: CNCDataset, k: int = 5, sample_size: int = 1000) -> 
     print(f"\n>>> Evaluating Gower k-NN Classifier (k={k}) on Stratified Test Split <<<")
     train_data, test_data = train_test_split(dataset, test_ratio=0.2, seed=42)
 
-    # Subsample test set if specified
-    if len(test_data) > sample_size:
+    # Subsample test set if specified (sample_size <= 0 evaluates the full test split)
+    if 0 < sample_size < len(test_data):
         print(f"Subsampling test set to {sample_size} records for responsive benchmark...")
         test_sample, _ = train_test_split(test_data, test_ratio=1.0 - (sample_size / len(test_data)), seed=42)
     else:
@@ -150,7 +151,7 @@ def run_evaluation(dataset: CNCDataset, k: int = 5, sample_size: int = 1000) -> 
     print(f"Accuracy: {eval_res['accuracy'] * 100:.2f}% ({eval_res['total_tested']} test instances)")
 
     print("\n--- Confusion Matrix (Actual vs Predicted) ---")
-    header = f"{'Actual \\ Pred':<15} | " + " | ".join(f"{c:<10}" for c in CONDITION_CLASSES)
+    header = f"{'Actual / Pred':<15} | " +" | ".join(f"{c:<10}" for c in CONDITION_CLASSES)
     print(header)
     print("-" * len(header))
     cm = eval_res["confusion_matrix"]
@@ -203,7 +204,7 @@ def main() -> None:
         "--sample-eval-size",
         type=int,
         default=300,
-        help="Evaluation test sample size (default: 300).",
+        help="Evaluation test sample size (default: 300; 0 = full test split, slower).",
     )
     # Query parameters
     parser.add_argument("--type", type=str, choices=["L", "M", "H"], help="Machine type (nominal: L, M, H).")
@@ -231,24 +232,28 @@ def main() -> None:
     dataset = load_dataset(csv_path)
     print(f"Loaded {len(dataset)} records. Attribute ranges calculated.")
 
+    query_args = [args.air_temp, args.proc_temp, args.speed, args.torque, args.wear, args.high_load]
+    if args.type is None and any(v is not None for v in query_args):
+        parser.error("--type is required when supplying custom query parameters.")
+
     if args.evaluate:
         run_evaluation(dataset, k=args.neighbors, sample_size=args.sample_eval_size)
-    elif args.demo or (args.type is None and not args.evaluate):
+    elif args.demo or args.type is None:
         run_demo(dataset, k=args.neighbors)
     else:
-        # Custom query execution
-        torque_val = args.torque or 40.0
-        high_load_val = args.high_load if args.high_load is not None else (1 if torque_val >= 40.0 else 0)
-
-        query = {
-            "Type": args.type,
-            "Air temperature [K]": args.air_temp or 300.0,
-            "Process temperature [K]": args.proc_temp or 310.0,
-            "Rotational speed [rpm]": args.speed or 1500.0,
-            "Torque [Nm]": torque_val,
-            "Tool wear [min]": args.wear or 100.0,
-            "Operational_High_Load": high_load_val,
-        }
+        # Custom query execution (explicit None checks so that 0 is a valid value, e.g. --wear 0)
+        try:
+            query = make_query_record(
+                machine_type=args.type,
+                air_temp=args.air_temp if args.air_temp is not None else 300.0,
+                process_temp=args.proc_temp if args.proc_temp is not None else 310.0,
+                speed_rpm=args.speed if args.speed is not None else 1500.0,
+                torque_nm=args.torque if args.torque is not None else 40.0,
+                tool_wear=args.wear if args.wear is not None else 100.0,
+                high_load=args.high_load,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
         print("\n--- User Query Machine ---")
         for k, v in query.items():
             print(f"  {k}: {v}")

@@ -1,7 +1,7 @@
 """Unit tests for k-NN classifier, neighbor exclusion, and condition prediction."""
 
 import unittest
-from src.dataset import CNCDataset, derive_condition, train_test_split, EXCLUDED_FROM_FEATURES
+from src.dataset import CNCDataset, derive_condition, make_query_record, train_test_split, EXCLUDED_FROM_FEATURES
 from src.knn import GowerKNNClassifier
 
 
@@ -184,6 +184,30 @@ class TestKNNClassifier(unittest.TestCase):
             derive_condition(machine_failure=0, air_temp=298.0, process_temp=308.5, speed_rpm=1500.0, torque_nm=40.0, tool_wear=50.0),
             "Normal",
         )
+
+    def test_make_query_record_matches_feature_schema(self):
+        query = make_query_record("m", 298.5, 308.9, 1450.0, 42.0, 0.0)
+        active_cols = (
+            self.dataset.numeric_cols + self.dataset.nominal_cols
+            + self.dataset.ordinal_cols + self.dataset.binary_cols
+        )
+        self.assertEqual(set(query.keys()), set(active_cols))
+        self.assertEqual(query["Type"], "M")
+        # Zero tool wear is a valid reading and must not be replaced by a default
+        self.assertEqual(query["Tool wear [min]"], 0.0)
+        # High-load flag derived from torque when not supplied
+        self.assertEqual(query["Operational_High_Load"], 1)
+        self.assertEqual(make_query_record("L", 298.5, 308.9, 1450.0, 39.9, 10.0)["Operational_High_Load"], 0)
+
+    def test_make_query_record_rejects_invalid_input(self):
+        with self.assertRaises(ValueError):
+            make_query_record("X", 298.5, 308.9, 1450.0, 42.0, 10.0)
+        with self.assertRaises(ValueError):
+            make_query_record("L", None, 308.9, 1450.0, 42.0, 10.0)
+        with self.assertRaises(ValueError):
+            make_query_record("L", 298.5, 308.9, -5.0, 42.0, 10.0)
+        with self.assertRaises(ValueError):
+            make_query_record("L", 298.5, 308.9, 1450.0, 42.0, 10.0, high_load=2)
 
 
 if __name__ == "__main__":

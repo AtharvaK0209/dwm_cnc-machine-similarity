@@ -119,6 +119,7 @@ class GowerKNNClassifier:
                 weight = 1.0 / (dist + eps)
             else:
                 weight = 1.0
+            neighbor["vote_weight"] = weight
             class_scores[label] += weight
 
         total_weight = sum(class_scores.values())

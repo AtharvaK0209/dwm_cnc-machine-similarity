@@ -30,7 +30,12 @@ ORDINAL_ORDERS: Dict[str, List[str]] = {}
 
 # Operational binary attribute (purely operating regime, NOT failure indicators)
 # Operational_High_Load: 1 if Torque >= 40.0 Nm (the dataset median/mean ~40 Nm), else 0.
+# Weighting decision: this flag is derived from Torque, so with unit weights torque-related
+# information contributes up to 2 of the 7 Gower components. It is retained deliberately to
+# demonstrate the binary attribute type required by the assignment; pass
+# weights={"Operational_High_Load": 0.0} to GowerKNNClassifier to remove its influence.
 BINARY_COLUMNS = ["Operational_High_Load"]
+HIGH_LOAD_TORQUE_THRESHOLD = 40.0
 
 # Target classes
 CONDITION_CLASSES = ["Normal", "Warning", "Critical"]
@@ -168,6 +173,49 @@ class CNCDataset:
         return features, labels
 
 
+def make_query_record(
+    machine_type: str,
+    air_temp: float,
+    process_temp: float,
+    speed_rpm: float,
+    torque_nm: float,
+    tool_wear: float,
+    high_load: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Build a query record with exactly the predictor features used by the classifier.
+
+    Shared by the CLI and the dashboard so both use the same feature configuration.
+    Operational_High_Load is derived from torque unless explicitly provided.
+    """
+    machine_type = str(machine_type).strip().upper()
+    if machine_type not in ("L", "M", "H"):
+        raise ValueError(f"Machine type must be one of L, M, H (got {machine_type!r}).")
+
+    values = {
+        "Air temperature [K]": air_temp,
+        "Process temperature [K]": process_temp,
+        "Rotational speed [rpm]": speed_rpm,
+        "Torque [Nm]": torque_nm,
+        "Tool wear [min]": tool_wear,
+    }
+    for col, val in values.items():
+        if val is None:
+            raise ValueError(f"Missing value for '{col}'.")
+        val = float(val)
+        if math.isnan(val) or math.isinf(val):
+            raise ValueError(f"Invalid value for '{col}': {val}.")
+        if val < 0:
+            raise ValueError(f"'{col}' cannot be negative (got {val}).")
+        values[col] = val
+
+    if high_load is None:
+        high_load = 1 if values["Torque [Nm]"] >= HIGH_LOAD_TORQUE_THRESHOLD else 0
+    elif high_load not in (0, 1):
+        raise ValueError("Operational_High_Load must be 0 or 1.")
+
+    return {"Type": machine_type, **values, "Operational_High_Load": int(high_load)}
+
+
 def load_dataset(csv_path: str | Path) -> CNCDataset:
     """Load and parse AI4I 2020 dataset from CSV."""
     path = Path(csv_path)
@@ -189,7 +237,7 @@ def load_dataset(csv_path: str | Path) -> CNCDataset:
 
             # Operational binary attribute (Torque >= 40.0 Nm -> high load operation)
             # This is an operational regime flag, NOT a failure indicator
-            operational_high_load = 1 if torque_nm >= 40.0 else 0
+            operational_high_load = 1 if torque_nm >= HIGH_LOAD_TORQUE_THRESHOLD else 0
 
             condition = derive_condition(
                 machine_failure=machine_failure,

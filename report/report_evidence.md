@@ -138,3 +138,30 @@ Evaluated on a stratified held-out test split ($k = 5$ neighbors) with normaliza
 2. **Preprocessing Integrity:** Numeric ranges ($R_f$) fitted exclusively on training data prevent optimistic bias from test data leakage.
 3. **Transparent Interpretability:** Distance breakdown highlights which sensor readings caused similarity or divergence.
 4. **Rare Event Realism:** The low recall on Critical (20.0%) realistically reflects the severe class imbalance (3.4% base rate) when binary failure shortcuts are eliminated.
+
+---
+
+## 8. Dashboard & Integration (Surya Kaushik)
+
+A Streamlit dashboard (`streamlit run app.py`) integrates the existing algorithm modules without reimplementing them:
+
+| Page | Function |
+|---|---|
+| Overview | Machine count, condition distribution, type-by-condition, torque vs speed scatter, tool wear histogram |
+| Dataset Explorer | Filterable view of all 10,000 records with summary statistics |
+| Machine Similarity | Top-N (default 3) most similar machines for a selected UDI, with Gower similarity, distance and per-attribute component distances |
+| Condition Prediction | k-NN prediction from user-entered characteristics, class probabilities, weighted voting result, nearest neighbours, input validation |
+| Model Evaluation | Same stratified evaluation as the CLI: accuracy, confusion matrix, per-class metrics |
+
+**Feature consistency:** the CLI and dashboard both build queries with `make_query_record()`, which produces exactly the 7 predictor features (Type, 5 numeric, Operational_High_Load) and derives the high-load flag from torque in the same way as the dataset loader.
+
+Screenshots of the running dashboard: `docs/screenshots/`.
+
+## 9. Review Items Resolved During Handover
+
+1. **Binary feature weighting:** `Operational_High_Load` is derived from torque (≥ 40 Nm), so torque-related information can contribute up to 2 of 7 Gower components. It is retained to demonstrate the binary attribute type and documented; it can be neutralised with `weights={"Operational_High_Load": 0.0}`.
+2. **Engineered labels:** Normal/Warning/Critical are derived labels, not original AI4I labels (Section 3).
+3. **Evaluation protocol:** label rules and k = 5 were fixed in advance; the test split was not used for threshold selection, tuning k, or model selection; numeric ranges are fitted on the training split only.
+4. **Critical recall:** reported as measured (20.00%, 2 of 10). With a 300-record sample the Critical estimate rests on only 10 cases; `--sample-eval-size 0` evaluates the full 2,000-record test split. No improvement is claimed.
+5. **Dataset attribution:** UCI source retained; the dataset is synthetic.
+6. **CLI fix:** custom-query defaults used `value or default`, so a valid `--wear 0` was silently replaced with 100 min (same for other zero inputs). Fixed with explicit `None` checks and input validation; covered by new unit tests (17 tests total).
