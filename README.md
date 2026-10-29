@@ -25,7 +25,10 @@ This project provides an audited, end-to-end data mining system for CNC machine 
 3. **Condition Classification:** Classifies machines into 3 operational health states (**Normal**, **Warning**, **Critical**) using a distance-weighted $k$-Nearest Neighbors ($k$-NN) classifier.
 4. **Target Leakage Prevention:** Eliminates row identifiers and failure-mode flags (`UDI`, `Product ID`, `Machine failure`, `TWF`, `HDF`, `PWF`, `OSF`, `RNF`) from predictor features.
 5. **Preprocessing Isolation:** Numeric normalization ranges ($R_f$) are fitted strictly on the training partition to prevent test set data leakage.
-6. **Zero Heavy External Dependencies:** Pure Python 3.14 + standard library / NumPy implementation.
+6. **Zero Heavy External Dependencies:** The algorithm, CLI and tests use only the Python standard library (Python 3.10+). Streamlit and pandas are needed only for the dashboard.
+7. **Interactive Dashboard:** A Streamlit dashboard (`app.py`) for dataset exploration, similarity search, condition prediction with voting details, and evaluation, built directly on the same algorithm modules.
+
+**GitHub Repository:** https://github.com/AtharvaK0209/dwm_cnc-machine-similarity
 
 ---
 
@@ -45,6 +48,8 @@ This project provides an audited, end-to-end data mining system for CNC machine 
 | **Numeric Ratio** | `Rotational speed [rpm]` | $[1168, 2886]\text{ rpm}$ ($R_f = 1718\text{ rpm}$) | $\frac{\|x_i - x_j\|}{R_f}$ |
 | **Numeric Ratio** | `Torque [Nm]` | $[3.8, 76.6]\text{ Nm}$ ($R_f = 72.8\text{ Nm}$) | $\frac{\|x_i - x_j\|}{R_f}$ |
 | **Numeric Ratio** | `Tool wear [min]` | $[0, 253]\text{ min}$ ($R_f = 253\text{ min}$) | $\frac{\|x_i - x_j\|}{R_f}$ |
+
+*Binary attribute weighting:* `Operational_High_Load` is derived from torque (≥ 40 Nm), so with unit Gower weights torque-related information contributes up to 2 of the 7 distance components. It is kept deliberately to demonstrate the binary attribute type; it is documented here rather than hidden, and its influence can be removed with `GowerKNNClassifier(weights={"Operational_High_Load": 0.0})`.
 
 *Ordinal attributes are fully supported by the Gower distance engine with rank normalization ($z = \frac{r-1}{M-1}$) and verified in unit tests, while `Type` is kept nominal by default to avoid ungrounded ordering assumptions.*
 
@@ -85,6 +90,8 @@ $$w_n = \frac{1}{d(q, n) + 10^{-5}}, \quad \hat{y}_q = \arg\max_{c} \sum_{n \in 
 ```
 dwm_cnc-machine-similarity/
 ├── README.md                      # Academic documentation, math, team details, execution guide
+├── app.py                         # Streamlit dashboard (uses src/ modules, no reimplementation)
+├── requirements.txt               # Dashboard dependencies (streamlit, pandas)
 ├── data/
 │   └── ai4i2020.csv               # AI4I 2020 dataset (10,000 records)
 ├── src/
@@ -96,7 +103,9 @@ dwm_cnc-machine-similarity/
 ├── tests/
 │   ├── __init__.py
 │   ├── test_gower.py              # Unit tests for Gower metric components, missing values, & axioms
-│   └── test_knn.py                # Unit tests for neighbor ordering, self-exclusion, & leakage prevention
+│   └── test_knn.py                # Unit tests for neighbor ordering, self-exclusion, leakage prevention, & query building
+├── docs/
+│   └── screenshots/               # Dashboard screenshots used as demonstration evidence
 └── report/
     └── report_evidence.md         # Full tables, confusion matrix, and report write-up
 ```
@@ -105,8 +114,18 @@ dwm_cnc-machine-similarity/
 
 ## Execution Guide
 
+All commands are run from the repository root.
+
+### 0. Installation
+```bash
+git clone https://github.com/AtharvaK0209/dwm_cnc-machine-similarity.git
+cd dwm_cnc-machine-similarity
+pip install -r requirements.txt
+```
+The CLI and tests need no extra packages; `requirements.txt` is only for the dashboard.
+
 ### 1. Run All Unit Tests
-Executes 15 comprehensive tests covering metric axioms, missing values, zero-range features, self-exclusion, and target leakage prevention:
+Executes 17 tests covering metric axioms, missing values, zero-range features, self-exclusion, and target leakage prevention:
 ```bash
 python -m unittest discover -s tests -v
 ```
@@ -128,6 +147,26 @@ Compute accuracy, confusion matrix, precision, recall, and F1-score on a stratif
 ```bash
 python -m src.pipeline --evaluate --sample-eval-size 300 -k 5
 ```
+Use `--sample-eval-size 0` to evaluate on the full held-out test split (2,000 records; slower, since the pure-Python distance compares every test machine with all ~8,000 training machines).
+
+### 5. Launch the Dashboard
+```bash
+streamlit run app.py
+```
+Opens at http://localhost:8501 with five pages:
+
+| Page | What it shows |
+|---|---|
+| **Overview** | Machine count, Normal/Warning/Critical distribution, type-by-condition chart, torque vs speed scatter, tool wear histogram, label rules and dataset attribution |
+| **Dataset Explorer** | Filterable table of all 10,000 records (type, condition, tool wear) and summary statistics |
+| **Machine Similarity** | Pick a machine by UDI and see its top-N (default 3) most similar machines with Gower similarity/distance, attributes and per-attribute component distances |
+| **Condition Prediction** | Enter machine characteristics (or load one of the 3 demo scenarios) and get the k-NN prediction, class probabilities, weighted voting result and nearest neighbours; invalid and out-of-range inputs are reported |
+| **Model Evaluation** | Runs the same stratified train/test evaluation as the CLI and shows accuracy, confusion matrix and per-class metrics |
+
+The dashboard uses the same feature configuration (`make_query_record`) and the same `GowerKNNClassifier` as the CLI, so results match the command-line output.
+
+### Dashboard Screenshots
+Screenshots of the running dashboard are stored in [`docs/screenshots/`](docs/screenshots/).
 
 ---
 
@@ -139,7 +178,20 @@ Evaluated on stratified held-out test split ($k=5$, ranges fit on train split on
 - **Warning:** Precision 80.43%, Recall 83.15%, F1 81.77%
 - **Critical:** Precision 66.67%, Recall 20.00%, F1 30.77%
 
-Full confusion matrices and report evidence are documented in [report/report_evidence.md](file:///c:/Users/athar/Desktop/Coding/dwm_cnc-machine-similarity/report/report_evidence.md).
+Full confusion matrices and report evidence are documented in [report/report_evidence.md](report/report_evidence.md).
+
+**Evaluation protocol:** the label rules and $k=5$ were fixed before evaluation; the test split was not used to choose thresholds, tune $k$ or select models; numeric ranges are fitted on the training split only. Note that the Critical metrics are based on only 10 test cases at the default sample size of 300.
+
+---
+
+## Team Contributions
+
+| Member | Roll No. | Contribution |
+|---|---|---|
+| Atharva Khandagale | 124A1061 | Core algorithms: dataset preprocessing and label engineering, Gower distance, k-NN classifier, CLI pipeline, unit tests, algorithm audit |
+| Surya Kaushik | 124A1055 | Verification of the algorithm modules, Streamlit dashboard and integration, CLI fixes, documentation updates, demonstration evidence |
+| Prakash Biradar | 124A1013 | Project report preparation |
+| Rakesh Biradar | 124A1014 | Project report preparation |
 
 ---
 
