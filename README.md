@@ -190,8 +190,8 @@ Full confusion matrices and report evidence are documented in [report/report_evi
 |---|---|---|
 | Atharva Khandagale | 124A1061 | Core algorithms: dataset preprocessing and label engineering, Gower distance, k-NN classifier, CLI pipeline, unit tests, algorithm audit |
 | Surya Kaushik | 124A1055 | Verification of the algorithm modules, Streamlit dashboard and integration, CLI fixes, documentation updates, demonstration evidence |
-| Prakash Biradar | 124A1013 | Project report preparation |
-| Rakesh Biradar | 124A1014 | Project report preparation |
+| Prakash Biradar | 124A1013 | Testing and validation through 17 unit tests, similarity search and condition prediction verification, performance evaluation, confusion matrix analysis, and project demonstration |
+| Rakesh Biradar | 124A1014 | Complete project report preparation; report formatting; adding screenshots, diagrams, result tables and references; final review and submission |
 
 ---
 
